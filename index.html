@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中国房价实时地图</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060d1f;
+    color: #e0e6f0;
+    font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #app { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+  #header {
+    background: rgba(6,13,31,0.97);
+    border-bottom: 1px solid rgba(80,140,220,0.3);
+    padding: 10px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    z-index: 100;
+  }
+  #header h1 { font-size: 17px; font-weight: 600; color: #7eb8f7; letter-spacing: 1px; }
+  #breadcrumb { font-size: 13px; color: #8899bb; display: flex; align-items: center; gap: 6px; }
+  #breadcrumb span { cursor: pointer; transition: color 0.2s; }
+  #breadcrumb span:hover { color: #7eb8f7; }
+  #breadcrumb .sep { color: #445566; cursor: default; }
+  #breadcrumb span.active { color: #e0e6f0; cursor: default; pointer-events: none; }
+  #back-btn {
+    background: rgba(80,140,220,0.15);
+    border: 1px solid rgba(80,140,220,0.4);
+    color: #7eb8f7;
+    padding: 5px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+    display: none;
+  }
+  #back-btn:hover { background: rgba(80,140,220,0.3); }
+  #content { flex: 1; display: flex; overflow: hidden; }
+  #sidebar {
+    width: 255px;
+    background: rgba(8,18,40,0.92);
+    border-right: 1px solid rgba(80,140,220,0.2);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  #sidebar::-webkit-scrollbar { width: 3px; }
+  #sidebar::-webkit-scrollbar-thumb { background: rgba(80,140,220,0.3); border-radius: 2px; }
+  .sb-section { padding: 14px 16px; border-bottom: 1px solid rgba(80,140,220,0.12); }
+  .sb-title { font-size: 10px; color: #4a6080; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; }
+  .stat-row { margin-bottom: 9px; }
+  .stat-label { font-size: 11px; color: #4a6080; margin-bottom: 2px; }
+  .stat-val { font-size: 15px; font-weight: 600; color: #e0e6f0; }
+  .stat-val.big { font-size: 20px; color: #7eb8f7; }
+  .stat-val.up { color: #ef5350; }
+  .stat-val.dn { color: #26a69a; }
+  .rank-list { list-style: none; }
+  .rank-item {
+    display: flex; align-items: center;
+    padding: 5px 4px; border-bottom: 1px solid rgba(80,140,220,0.07);
+    cursor: pointer; transition: background 0.15s; border-radius: 3px;
+  }
+  .rank-item:hover { background: rgba(80,140,220,0.1); }
+  .rn { width: 18px; font-size: 10px; color: #445566; flex-shrink: 0; }
+  .rn.top { color: #f0a020; font-weight: 700; }
+  .rname { flex: 1; font-size: 12px; color: #aabbd0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rbar-w { width: 50px; margin: 0 5px; height: 3px; background: rgba(80,140,220,0.15); border-radius: 2px; }
+  .rbar { height: 3px; border-radius: 2px; background: linear-gradient(90deg,#313695,#74add1); }
+  .rprice { font-size: 11px; color: #7eb8f7; font-weight: 600; }
+  #map-wrap { flex: 1; position: relative; display: flex; }
+  #map-chart { width: 100%; height: 100%; }
+  #loading {
+    position: absolute; inset: 0;
+    background: rgba(6,13,31,0.88);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 50;
+  }
+  .spinner {
+    width: 38px; height: 38px;
+    border: 3px solid rgba(80,140,220,0.2);
+    border-top-color: #7eb8f7;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    margin-bottom: 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading p { font-size: 13px; color: #4a6080; }
+  #detail-view { display: none; width: 100%; height: 100%; }
+  #detail-sb {
+    width: 255px; background: rgba(8,18,40,0.92);
+    border-right: 1px solid rgba(80,140,220,0.2);
+    padding: 18px 16px; overflow-y: auto; flex-shrink: 0;
+  }
+  #detail-sb::-webkit-scrollbar { width: 3px; }
+  #detail-sb::-webkit-scrollbar-thumb { background: rgba(80,140,220,0.3); border-radius: 2px; }
+  #detail-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #time-tabs {
+    display: flex; gap: 8px; padding: 10px 18px;
+    background: rgba(8,18,40,0.5);
+    border-bottom: 1px solid rgba(80,140,220,0.15);
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    padding: 5px 16px; border-radius: 18px;
+    border: 1px solid rgba(80,140,220,0.3);
+    background: transparent; color: #6688aa;
+    font-size: 13px; cursor: pointer; transition: all 0.2s;
+  }
+  .tab-btn:hover { border-color: rgba(80,140,220,0.6); color: #99bbdd; }
+  .tab-btn.active { background: rgba(80,140,220,0.22); border-color: #7eb8f7; color: #7eb8f7; }
+  #trend-chart { flex: 1; }
+  .ds { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid rgba(80,140,220,0.1); }
+  .ds:last-child { border-bottom: none; margin-bottom: 0; }
+  .ds .lbl { font-size: 10px; color: #4a6080; margin-bottom: 3px; }
+  .ds .val { font-size: 14px; font-weight: 600; }
+  .ds .sub { font-size: 10px; color: #3a5070; margin-top: 2px; }
+  .vs-row { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
+  .vs-bar { flex: 1; height: 5px; background: rgba(80,140,220,0.15); border-radius: 3px; overflow: hidden; }
+  .vs-fill { height: 100%; border-radius: 3px; }
+  @media (max-width: 768px) {
+    #sidebar, #detail-sb { width: 180px; }
+    .stat-val.big { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <h1>&#127968; 中国房价实时地图</h1>
+    <div id="breadcrumb"><span onclick="goNation()">全国</span></div>
+    <button id="back-btn" onclick="goBack()">&#8592; 返回</button>
+  </div>
+  <div id="content">
+    <div id="sidebar">
+      <div class="sb-section">
+        <div class="sb-title">统计概览</div>
+        <div class="stat-row"><div class="stat-label">当前均价</div><div class="stat-val big" id="s-avg">--</div></div>
+        <div class="stat-row"><div class="stat-label">最高</div><div class="stat-val up" id="s-high">--</div></div>
+        <div class="stat-row"><div class="stat-label">最低</div><div class="stat-val dn" id="s-low">--</div></div>
+      </div>
+      <div class="sb-section" style="flex:1">
+        <div class="sb-title" id="rank-title">省份排行</div>
+        <ul class="rank-list" id="rank-list"></ul>
+      </div>
+    </div>
+    <div id="map-wrap">
+      <div id="map-chart"></div>
+      <div id="loading"><div class="spinner"></div><p id="load-txt">正在加载地图数据...</p></div>
+    </div>
+    <div id="detail-view">
+      <div id="detail-sb">
+        <div style="margin-bottom:18px">
+          <div style="font-size:10px;color:#4a6080;margin-bottom:3px">当前地区</div>
+          <div style="font-size:20px;font-weight:700;color:#7eb8f7" id="d-name">--</div>
+        </div>
+        <div class="ds">
+          <div class="lbl">当前房价</div>
+          <div class="val" style="font-size:22px;color:#7eb8f7" id="d-cur">--</div>
+          <div class="sub">元 / 平方米</div>
+        </div>
+        <div class="ds">
+          <div class="lbl">历史最高</div>
+          <div class="val up" id="d-hi">--</div>
+          <div class="sub" id="d-hi-d">--</div>
+        </div>
+        <div class="ds">
+          <div class="lbl">历史最低</div>
+          <div class="val dn" id="d-lo">--</div>
+          <div class="sub" id="d-lo-d">--</div>
+        </div>
+        <div class="ds">
+          <div class="lbl">同比 vs 2025-02</div>
+          <div class="val" id="d-yoy">--</div>
+        </div>
+        <div class="ds">
+          <div class="lbl">10年涨幅 vs 2016-02</div>
+          <div class="val" id="d-10y">--</div>
+        </div>
+        <div class="ds">
+          <div class="lbl">vs 上海均价</div>
+          <div class="vs-row">
+            <div class="vs-bar"><div class="vs-fill" id="d-vf"></div></div>
+            <span id="d-vt" style="font-size:12px;font-weight:600">--</span>
+          </div>
+        </div>
+      </div>
+      <div id="detail-main">
+        <div id="time-tabs">
+          <button class="tab-btn active" onclick="setTab('10y')">近10年</button>
+          <button class="tab-btn" onclick="setTab('12m')">近12月</button>
+          <button class="tab-btn" onclick="setTab('30d')">近30天</button>
+        </div>
+        <div id="trend-chart"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// ── DATA ─────────────────────────────────────────────────────
+var SH_BASE = [
+  27200,27600,28100,29300,31200,33500,35800,38200,40100,41300,42000,42800,
+  44500,46800,49200,51500,53800,55200,56400,57000,57600,57900,58100,58200,
+  57800,57200,56700,56100,55600,55100,55000,55200,55100,54900,54700,54400,
+  54100,53900,53800,54000,54300,54700,55100,55300,55100,54900,54600,54200,
+  53900,54100,54500,55100,55700,56300,56800,57200,57100,56900,56600,56100,
+  55700,55200,54100,54600,55200,56100,57300,58500,59700,60800,61800,62700,
+  63600,64500,65500,66400,67400,68300,69200,70000,70600,71100,71500,72000,
+  71200,70100,69000,67200,64800,63900,64800,65700,66200,66600,66800,66900,
+  66400,65900,65300,64800,64600,64100,63700,63200,62800,62700,62600,62500,
+  63000,63500,64100,64600,64800,64900,64600,64200,64100,64400,65000,65500,
+  65800,66100,66500,66800,67000,67200,67000,66800,66500,66800,67200,67500,
+  68000,68500
+];
+
+var DMUL = {
+  '\u9ec4\u6d66\u533a':1.82,'\u9759\u5b89\u533a':1.71,'\u5f90\u6c47\u533a':1.60,'\u957f\u5b81\u533a':1.41,
+  '\u666e\u9640\u533a':1.20,'\u8679\u53e3\u533a':1.28,'\u6768\u6d66\u533a':1.14,'\u6d66\u4e1c\u65b0\u533a':1.09,
+  '\u5b9d\u5c71\u533a':0.73,'\u95f5\u884c\u533a':0.94,'\u5609\u5b9a\u533a':0.65,'\u91d1\u5c71\u533a':0.37,
+  '\u677e\u6c5f\u533a':0.60,'\u9752\u6d66\u533a':0.57,'\u5949\u8d24\u533a':0.42,'\u5d07\u660e\u533a':0.28
+};
+
+var PROV_BASE = {
+  '\u5317\u4eac\u5e02':82000,'\u4e0a\u6d77\u5e02':68500,'\u5e7f\u4e1c\u7701':28000,'\u6d59\u6c5f\u7701':25000,
+  '\u6c5f\u82cf\u7701':18000,'\u5929\u6d25\u5e02':20000,'\u91cd\u5e86\u5e02':14000,'\u6e56\u5317\u7701':13000,
+  '\u798f\u5efa\u7701':20000,'\u5c71\u4e1c\u7701':12000,'\u6cb3\u5357\u7701':10000,'\u56db\u5ddd\u7701':13500,
+  '\u9655\u897f\u7701':12000,'\u6e56\u5357\u7701':11000,'\u6cb3\u5317\u7701':9500,'\u8fbd\u5b81\u7701':10000,
+  '\u9ed1\u9f99\u6c5f\u7701':6000,'\u5409\u6797\u7701':7000,'\u5c71\u897f\u7701':8000,'\u5b89\u5fbd\u7701':12000,
+  '\u6c5f\u897f\u7701':10500,'\u5e7f\u897f\u58ee\u65cf\u81ea\u6cbb\u533a':9000,'\u4e91\u5357\u7701':11000,'\u8d35\u5dde\u7701':9000,
+  '\u6d77\u5357\u7701':22000,'\u5185\u8499\u53e4\u81ea\u6cbb\u533a':8000,'\u5b81\u590f\u56de\u65cf\u81ea\u6cbb\u533a':9500,
+  '\u7518\u8083\u7701':7500,'\u9752\u6d77\u7701':8000,'\u65b0\u7586\u7ef4\u543e\u5c14\u81ea\u6cbb\u533a':7000,
+  '\u897f\u85cf\u81ea\u6cbb\u533a':10000,'\u53f0\u6e7e\u7701':45000,'\u9999\u6e2f\u7279\u522b\u884c\u653f\u533a':150000,
+  '\u6fb3\u95e8\u7279\u522b\u884c\u653f\u533a':120000
+};
+
+var ADC = {
+  '\u5317\u4eac\u5e02':110000,'\u5929\u6d25\u5e02':120000,'\u6cb3\u5317\u7701':130000,'\u5c71\u897f\u7701':140000,
+  '\u5185\u8499\u53e4\u81ea\u6cbb\u533a':150000,'\u8fbd\u5b81\u7701':210000,'\u5409\u6797\u7701':220000,'\u9ed1\u9f99\u6c5f\u7701':230000,
+  '\u4e0a\u6d77\u5e02':310000,'\u6c5f\u82cf\u7701':320000,'\u6d59\u6c5f\u7701':330000,'\u5b89\u5fbd\u7701':340000,
+  '\u798f\u5efa\u7701':350000,'\u6c5f\u897f\u7701':360000,'\u5c71\u4e1c\u7701':370000,'\u6cb3\u5357\u7701':410000,
+  '\u6e56\u5317\u7701':420000,'\u6e56\u5357\u7701':430000,'\u5e7f\u4e1c\u7701':440000,'\u5e7f\u897f\u58ee\u65cf\u81ea\u6cbb\u533a':450000,
+  '\u6d77\u5357\u7701':460000,'\u91cd\u5e86\u5e02':500000,'\u56db\u5ddd\u7701':510000,'\u8d35\u5dde\u7701':520000,
+  '\u4e91\u5357\u7701':530000,'\u897f\u85cf\u81ea\u6cbb\u533a':540000,'\u9655\u897f\u7701':610000,'\u7518\u8083\u7701':620000,
+  '\u9752\u6d77\u7701':630000,'\u5b81\u590f\u56de\u65cf\u81ea\u6cbb\u533a':640000,'\u65b0\u7586\u7ef4\u543e\u5c14\u81ea\u6cbb\u533a':650000,
+  '\u53f0\u6e7e\u7701':710000,'\u9999\u6e2f\u7279\u522b\u884c\u653f\u533a':810000,'\u6fb3\u95e8\u7279\u522b\u884c\u653f\u533a':820000
+};
+
+// ── UTILITIES ────────────────────────────────────────────────
+function seededHash(s) {
+  var h = 0;
+  for (var i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return (h >>> 0) / 0xFFFFFFFF;
+}
+function noise(name, idx) { return 1 + (seededHash(name + '_' + idx) - 0.5) * 0.06; }
+function dnoise(name, d) { return 1 + (seededHash(name + '_d_' + d) - 0.5) * 0.004; }
+
+function monthlyData(name) {
+  var m = DMUL[name] || 1;
+  return SH_BASE.map(function(b, i) { return Math.round(b * m * noise(name, i)); });
+}
+function dailyData(name) {
+  var m = DMUL[name] || 1;
+  var last = Math.round(SH_BASE[SH_BASE.length - 1] * m * noise(name, SH_BASE.length - 1));
+  var r = [];
+  for (var d = 0; d < 30; d++) r.push(Math.round(last * dnoise(name, d)));
+  return r;
+}
+function monthLabels() {
+  var r = [];
+  for (var y = 2015; y <= 2026; y++) {
+    var mx = (y === 2026) ? 2 : 12;
+    for (var m = 1; m <= mx; m++) r.push(y + '-' + (m < 10 ? '0' + m : '' + m));
+  }
+  return r;
+}
+function dayLabels() {
+  var r = [], s = new Date(2026, 1, 14);
+  for (var d = 0; d < 30; d++) {
+    var t = new Date(s); t.setDate(t.getDate() + d);
+    r.push(t.getFullYear() + '-' + (t.getMonth() + 1 < 10 ? '0' : '') + (t.getMonth() + 1) + '-' + (t.getDate() < 10 ? '0' : '') + t.getDate());
+  }
+  return r;
+}
+function colorScale(v, mn, mx) {
+  var t = Math.max(0, Math.min(1, (v - mn) / (mx - mn)));
+  var stops = [[0,[49,54,149]],[0.25,[116,173,209]],[0.5,[254,224,144]],[0.75,[244,109,67]],[1,[215,48,39]]];
+  for (var i = 0; i < stops.length - 1; i++) {
+    var t0 = stops[i][0], c0 = stops[i][1], t1 = stops[i+1][0], c1 = stops[i+1][1];
+    if (t >= t0 && t <= t1) {
+      var f = (t - t0) / (t1 - t0);
+      return 'rgb(' + Math.round(c0[0]+(c1[0]-c0[0])*f) + ',' + Math.round(c0[1]+(c1[1]-c0[1])*f) + ',' + Math.round(c0[2]+(c1[2]-c0[2])*f) + ')';
+    }
+  }
+  return '#fee090';
+}
+
+// ── STATE ────────────────────────────────────────────────────
+var VIEW = 'nation', PROV_NAME = null, DIST_NAME = null, CUR_TAB = '10y';
+var mapChart = null, trendChart = null, geoCache = {};
+var simPrices = {}, simTimer = null;
+Object.keys(PROV_BASE).forEach(function(k) { simPrices[k] = PROV_BASE[k]; });
+
+// ── NAVIGATION ───────────────────────────────────────────────
+function updateBC() {
+  var bc = document.getElementById('breadcrumb');
+  var bb = document.getElementById('back-btn');
+  var h = '<span onclick="goNation()">\u5168\u56fd</span>';
+  if (VIEW === 'province' || VIEW === 'detail') {
+    h += '<span class="sep">\u203a</span>';
+    if (VIEW === 'province') h += '<span class="active">' + PROV_NAME + '</span>';
+    else h += '<span onclick="goProvince()">' + (PROV_NAME || '\u4e0a\u6d77\u5e02') + '</span>';
+  }
+  if (VIEW === 'detail') {
+    h += '<span class="sep">\u203a</span>';
+    h += '<span class="active">' + DIST_NAME + '</span>';
+  }
+  bc.innerHTML = h;
+  bb.style.display = VIEW !== 'nation' ? 'block' : 'none';
+}
+function goBack() { if (VIEW === 'detail') goProvince(); else if (VIEW === 'province') goNation(); }
+function goNation() { VIEW = 'nation'; PROV_NAME = null; DIST_NAME = null; showMapUI(); updateBC(); loadNation(); }
+function goProvince() { VIEW = 'province'; DIST_NAME = null; showMapUI(); updateBC(); loadProvince(PROV_NAME); }
+function showMapUI() {
+  document.getElementById('sidebar').style.display = 'flex';
+  document.getElementById('map-wrap').style.display = 'flex';
+  document.getElementById('detail-view').style.display = 'none';
+  if (mapChart) mapChart.resize();
+}
+function showDetailUI() {
+  document.getElementById('sidebar').style.display = 'none';
+  document.getElementById('map-wrap').style.display = 'none';
+  document.getElementById('detail-view').style.display = 'flex';
+  if (trendChart) trendChart.resize();
+}
+function showLoad(t) { document.getElementById('loading').style.display = 'flex'; document.getElementById('load-txt').textContent = t || '\u52a0\u8f7d\u4e2d...'; }
+function hideLoad() { document.getElementById('loading').style.display = 'none'; }
+
+// ── GEO ──────────────────────────────────────────────────────
+function loadGeo(adcode) {
+  if (geoCache[adcode]) return Promise.resolve(geoCache[adcode]);
+  return fetch('https://geo.datav.aliyun.com/areas_v3/bound/' + adcode + '_full.json')
+    .then(function(r) { if (!r.ok) throw new Error('GeoJSON load failed: ' + adcode); return r.json(); })
+    .then(function(d) { geoCache[adcode] = d; return d; });
+}
+
+// ── MAP CLICK ────────────────────────────────────────────────
+function onMapClick(p) {
+  if (VIEW === 'nation') {
+    if (!ADC[p.name]) return;
+    PROV_NAME = p.name; VIEW = 'province'; updateBC(); loadProvince(p.name);
+  } else if (VIEW === 'province' && PROV_NAME === '\u4e0a\u6d77\u5e02') {
+    if (!DMUL[p.name]) return;
+    DIST_NAME = p.name; VIEW = 'detail'; updateBC(); showDetailUI(); renderDetail(p.name);
+  }
+}
+
+// ── NATION MAP ───────────────────────────────────────────────
+function loadNation() {
+  showLoad('\u6b63\u5728\u52a0\u8f7d\u5168\u56fd\u5730\u56fe...');
+  loadGeo(100000).then(function(geo) {
+    echarts.registerMap('china', geo);
+    renderNation();
+    sbNation();
+    startSim();
+  }).catch(function(e) { document.getElementById('load-txt').textContent = '\u52a0\u8f7d\u5931\u8d25: ' + e.message; });
+}
+function renderNation() {
+  if (!mapChart) {
+    mapChart = echarts.init(document.getElementById('map-chart'));
+    mapChart.on('click', onMapClick);
+    window.addEventListener('resize', function() { if (mapChart) mapChart.resize(); });
+  }
+  var vals = Object.values(simPrices);
+  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+  var data = Object.keys(simPrices).map(function(n) {
+    return { name: n, value: simPrices[n], itemStyle: { areaColor: colorScale(simPrices[n], mn, mx) } };
+  });
+  mapChart.setOption({
+    backgroundColor: '#060d1f',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(8,18,40,0.93)', borderColor: 'rgba(80,140,220,0.4)', borderWidth: 1,
+      textStyle: { color: '#e0e6f0', fontSize: 13 },
+      formatter: function(p) {
+        if (!p.data) return p.name;
+        var c = ((p.data.value - PROV_BASE[p.name]) / PROV_BASE[p.name] * 100).toFixed(2);
+        return '<b>' + p.name + '</b><br/>\u5747\u4ef7: <b>' + p.data.value.toLocaleString() + '</b> \u5143/\u33a1<br/>\u6ce2\u52a8: ' + (c >= 0 ? '+' : '') + c + '%<br/><span style="color:#7eb8f7;font-size:11px">\u70b9\u51fb\u8fdb\u5165</span>';
+      }
+    },
+    visualMap: {
+      min: mn, max: mx, show: true, orient: 'vertical', left: 8, bottom: 18,
+      text: ['\u9ad8', '\u4f4e'], textStyle: { color: '#6688aa', fontSize: 10 },
+      inRange: { color: ['#313695','#74add1','#fee090','#f46d43','#d73027'] },
+      calculable: true, itemWidth: 10, itemHeight: 70
+    },
+    series: [{
+      type: 'map', map: 'china', roam: true,
+      emphasis: { itemStyle: { areaColor: '#a0c4ff', borderColor: '#7eb8f7', borderWidth: 2 }, label: { color: '#fff' } },
+      select: { disabled: true },
+      label: { show: false },
+      itemStyle: { borderColor: 'rgba(80,140,220,0.45)', borderWidth: 0.5 },
+      data: data
+    }]
+  }, true);
+  hideLoad();
+}
+
+// ── PROVINCE MAP ─────────────────────────────────────────────
+function loadProvince(name) {
+  showLoad('\u6b63\u5728\u52a0\u8f7d ' + name + '...');
+  loadGeo(ADC[name]).then(function(geo) {
+    echarts.registerMap(name, geo);
+    renderProvince(name, geo);
+    sbProvince(name, geo);
+  }).catch(function(e) { document.getElementById('load-txt').textContent = '\u52a0\u8f7d\u5931\u8d25: ' + e.message; });
+}
+function renderProvince(name, geo) {
+  if (!mapChart) {
+    mapChart = echarts.init(document.getElementById('map-chart'));
+    mapChart.on('click', onMapClick);
+    window.addEventListener('resize', function() { if (mapChart) mapChart.resize(); });
+  }
+  var data = [], isSH = (name === '\u4e0a\u6d77\u5e02');
+  if (isSH) {
+    var li = SH_BASE.length - 1;
+    Object.keys(DMUL).forEach(function(d) {
+      data.push({ name: d, value: Math.round(SH_BASE[li] * DMUL[d] * noise(d, li)) });
+    });
+  } else {
+    var base = simPrices[name] || 15000;
+    (geo.features || []).forEach(function(f) {
+      data.push({ name: f.properties.name, value: Math.round(base * (0.65 + seededHash(f.properties.name) * 0.7)) });
+    });
+  }
+  var vals2 = data.map(function(d) { return d.value; });
+  var mn2 = Math.min.apply(null, vals2), mx2 = Math.max.apply(null, vals2);
+  data.forEach(function(d) { d.itemStyle = { areaColor: colorScale(d.value, mn2, mx2) }; });
+  mapChart.setOption({
+    backgroundColor: '#060d1f',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(8,18,40,0.93)', borderColor: 'rgba(80,140,220,0.4)', borderWidth: 1,
+      textStyle: { color: '#e0e6f0', fontSize: 13 },
+      formatter: function(p) {
+        if (!p.data) return p.name;
+        return '<b>' + p.name + '</b><br/>\u5747\u4ef7: <b>' + p.data.value.toLocaleString() + '</b> \u5143/\u33a1' + (isSH ? '<br/><span style="color:#7eb8f7;font-size:11px">\u70b9\u51fb\u67e5\u770b\u8d8b\u52bf</span>' : '');
+      }
+    },
+    visualMap: {
+      min: mn2, max: mx2, show: true, orient: 'vertical', left: 8, bottom: 18,
+      text: ['\u9ad8', '\u4f4e'], textStyle: { color: '#6688aa', fontSize: 10 },
+      inRange: { color: ['#313695','#74add1','#fee090','#f46d43','#d73027'] },
+      calculable: true, itemWidth: 10, itemHeight: 70
+    },
+    series: [{
+      type: 'map', map: name, roam: true,
+      emphasis: { itemStyle: { areaColor: '#a0c4ff', borderColor: '#7eb8f7', borderWidth: 2 }, label: { color: '#fff' } },
+      select: { disabled: true },
+      label: { show: true, fontSize: 10, color: '#ccd' },
+      itemStyle: { borderColor: 'rgba(80,140,220,0.5)', borderWidth: 0.8 },
+      data: data
+    }]
+  }, true);
+  hideLoad();
+}
+
+// ── SIDEBAR ──────────────────────────────────────────────────
+function sbNation() {
+  var ent = Object.keys(simPrices).map(function(k) { return [k, simPrices[k]]; }).sort(function(a,b) { return b[1]-a[1]; });
+  var total = 0; ent.forEach(function(e) { total += e[1]; });
+  var avg = Math.round(total / ent.length);
+  document.getElementById('s-avg').textContent = avg.toLocaleString() + ' \u5143/\u33a1';
+  document.getElementById('s-high').textContent = ent[0][0] + ': ' + ent[0][1].toLocaleString();
+  document.getElementById('s-low').textContent = ent[ent.length-1][0] + ': ' + ent[ent.length-1][1].toLocaleString();
+  document.getElementById('rank-title').textContent = '\u7701\u4efd\u6392\u884c Top10';
+  var mx = ent[0][1];
+  document.getElementById('rank-list').innerHTML = ent.slice(0,10).map(function(e,i) {
+    var sname = e[0].replace(/\u7701|\u5e02|\u81ea\u6cbb\u533a|\u58ee\u65cf|\u56de\u65cf|\u7ef4\u543e\u5c14|\u7279\u522b\u884c\u653f\u533a/g,'');
+    return '<li class="rank-item" onclick="PROV_NAME=\'' + e[0] + '\';VIEW=\'province\';updateBC();loadProvince(\'' + e[0] + '\')">' +
+      '<span class="rn ' + (i<3?'top':'') + '">' + (i+1) + '</span>' +
+      '<span class="rname">' + sname + '</span>' +
+      '<div class="rbar-w"><div class="rbar" style="width:' + Math.round(e[1]/mx*100) + '%"></div></div>' +
+      '<span class="rprice">' + (e[1]/10000).toFixed(1) + '\u4e07</span></li>';
+  }).join('');
+}
+function sbProvince(name, geo) {
+  var ent = [], isSH = (name === '\u4e0a\u6d77\u5e02');
+  if (isSH) {
+    var li = SH_BASE.length - 1;
+    ent = Object.keys(DMUL).map(function(d) { return [d, Math.round(SH_BASE[li] * DMUL[d] * noise(d, li))]; }).sort(function(a,b){return b[1]-a[1];});
+  } else {
+    var base = simPrices[name] || 15000;
+    ent = (geo.features||[]).map(function(f) { return [f.properties.name, Math.round(base*(0.65+seededHash(f.properties.name)*0.7))]; }).sort(function(a,b){return b[1]-a[1];});
+  }
+  var total2 = 0; ent.forEach(function(e){total2+=e[1];});
+  var avg2 = ent.length ? Math.round(total2/ent.length) : 0;
+  document.getElementById('s-avg').textContent = avg2.toLocaleString() + ' \u5143/\u33a1';
+  document.getElementById('s-high').textContent = ent[0] ? ent[0][0]+': '+ent[0][1].toLocaleString() : '--';
+  document.getElementById('s-low').textContent = ent[ent.length-1] ? ent[ent.length-1][0]+': '+ent[ent.length-1][1].toLocaleString() : '--';
+  document.getElementById('rank-title').textContent = name + ' \u6392\u884c';
+  var mx = ent[0] ? ent[0][1] : 1;
+  document.getElementById('rank-list').innerHTML = ent.map(function(e,i) {
+    var click = isSH ? 'onclick="DIST_NAME=\'' + e[0] + '\';VIEW=\'detail\';updateBC();showDetailUI();renderDetail(\'' + e[0] + '\')"' : '';
+    return '<li class="rank-item" ' + click + '>' +
+      '<span class="rn ' + (i<3?'top':'') + '">' + (i+1) + '</span>' +
+      '<span class="rname">' + e[0] + '</span>' +
+      '<div class="rbar-w"><div class="rbar" style="width:' + Math.round(e[1]/mx*100) + '%"></div></div>' +
+      '<span class="rprice">' + (e[1]/10000).toFixed(1) + '\u4e07</span></li>';
+  }).join('');
+}
+
+// ── SIMULATION ───────────────────────────────────────────────
+function startSim() {
+  if (simTimer) clearInterval(simTimer);
+  simTimer = setInterval(function() {
+    if (VIEW === 'nation') {
+      var t = Math.floor(Date.now() / 30000);
+      Object.keys(simPrices).forEach(function(n) {
+        simPrices[n] = Math.round(PROV_BASE[n] * (1 + (seededHash(n + '_s_' + t) - 0.5) * 0.006));
+      });
+      renderNation(); sbNation();
+    }
+  }, 30000);
+}
+
+// ── DETAIL VIEW ──────────────────────────────────────────────
+function renderDetail(name) {
+  CUR_TAB = '10y';
+  document.querySelectorAll('.tab-btn').forEach(function(b, i) { b.classList.toggle('active', i === 0); });
+  var md = monthlyData(name), ml = monthLabels();
+  var hi = 0, hii = 0, lo = Infinity, loi = 0;
+  md.forEach(function(v,i) { if(v>hi){hi=v;hii=i;} if(v<lo){lo=v;loi=i;} });
+  var cur = md[md.length-1];
+  var yoyI = (2025-2015)*12+1;
+  var yoy = ((cur-md[yoyI])/md[yoyI]*100).toFixed(2);
+  var t10I = 13;
+  var t10 = ((cur-md[t10I])/md[t10I]*100).toFixed(1);
+  var shCur = SH_BASE[SH_BASE.length-1];
+  var vs = ((cur-shCur)/shCur*100).toFixed(1);
+  document.getElementById('d-name').textContent = name;
+  document.getElementById('d-cur').textContent = cur.toLocaleString();
+  document.getElementById('d-hi').textContent = hi.toLocaleString() + ' \u5143/\u33a1';
+  document.getElementById('d-hi-d').textContent = ml[hii];
+  document.getElementById('d-lo').textContent = lo.toLocaleString() + ' \u5143/\u33a1';
+  document.getElementById('d-lo-d').textContent = ml[loi];
+  var yoyEl = document.getElementById('d-yoy');
+  yoyEl.textContent = (yoy >= 0 ? '+' : '') + yoy + '%';
+  yoyEl.className = 'val ' + (yoy >= 0 ? 'up' : 'dn');
+  var t10El = document.getElementById('d-10y');
+  t10El.textContent = (t10 >= 0 ? '+' : '') + t10 + '%';
+  t10El.className = 'val up';
+  var mult = DMUL[name] || 1;
+  var fw = Math.min(98, Math.max(8, mult / 2.2 * 100));
+  var vfEl = document.getElementById('d-vf');
+  vfEl.style.width = fw + '%';
+  vfEl.style.background = mult > 1 ? '#ef5350' : '#26a69a';
+  var vtEl = document.getElementById('d-vt');
+  vtEl.textContent = (vs >= 0 ? '+' : '') + vs + '%';
+  vtEl.style.color = vs >= 0 ? '#ef5350' : '#26a69a';
+  renderTrend(name, '10y');
+}
+
+function setTab(t) {
+  CUR_TAB = t;
+  var labels = { '10y': '\u8fd110\u5e74', '12m': '\u8fd112\u6708', '30d': '\u8fd130\u5929' };
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('active', b.textContent === labels[t]); });
+  renderTrend(DIST_NAME, t);
+}
+
+function renderTrend(name, tab) {
+  if (!trendChart) {
+    trendChart = echarts.init(document.getElementById('trend-chart'));
+    window.addEventListener('resize', function() { if (trendChart) trendChart.resize(); });
+  }
+  var am = monthlyData(name), al = monthLabels();
+  var data, labels;
+  if (tab === '10y') { data = am.slice(14); labels = al.slice(14); }
+  else if (tab === '12m') { data = am.slice(-12); labels = al.slice(-12); }
+  else { data = dailyData(name); labels = dayLabels(); }
+  var pi = 0, ti = 0;
+  data.forEach(function(v,i) { if(v>data[pi])pi=i; if(v<data[ti])ti=i; });
+  var mn = Math.min.apply(null, data), mx = Math.max.apply(null, data), pad = (mx-mn)*0.18;
+  var mps = [];
+  if (data.length > 2) {
+    mps.push({ name:'\u5cf0\u5024', coord:[labels[pi],data[pi]], value:data[pi], symbol:'triangle', symbolSize:10,
+      itemStyle:{color:'#ef5350'}, label:{formatter:'\u25b2',color:'#ef5350',fontSize:13,offset:[0,-16]} });
+    if (ti !== pi) mps.push({ name:'\u8c37\u5024', coord:[labels[ti],data[ti]], value:data[ti], symbol:'triangle', symbolSize:10, symbolRotate:180,
+      itemStyle:{color:'#26a69a'}, label:{formatter:'\u25bc',color:'#26a69a',fontSize:13,offset:[0,16]} });
+  }
+  var intv = tab === '30d' ? 4 : tab === '12m' ? 1 : Math.floor(labels.length / 9);
+  trendChart.setOption({
+    backgroundColor: '#060d1f',
+    grid: { left:62, right:22, top:28, bottom:48 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type:'cross', lineStyle:{color:'rgba(126,184,247,0.35)'}, crossStyle:{color:'rgba(126,184,247,0.35)'} },
+      backgroundColor: 'rgba(8,18,40,0.95)', borderColor: 'rgba(80,140,220,0.45)', borderWidth: 1,
+      textStyle: { color:'#e0e6f0', fontSize:13 },
+      formatter: function(ps) { return '<b>' + ps[0].axisValue + '</b><br/>\u623f\u4ef7: <b style="color:#7eb8f7">' + ps[0].data.toLocaleString() + ' \u5143/\u33a1</b>'; }
+    },
+    xAxis: {
+      type: 'category', data: labels,
+      axisLine: { lineStyle:{color:'rgba(80,140,220,0.28)'} },
+      axisTick: { lineStyle:{color:'rgba(80,140,220,0.28)'} },
+      axisLabel: { color:'#4a6080', fontSize:10, interval:intv, rotate:tab==='30d'?28:0 },
+      splitLine: { show:false }
+    },
+    yAxis: {
+      type: 'value', min: Math.floor((mn-pad)/500)*500, max: Math.ceil((mx+pad)/500)*500,
+      axisLine: { show:false }, axisTick: { show:false },
+      axisLabel: { color:'#4a6080', fontSize:10, formatter: function(v) { return v>=10000?(v/10000).toFixed(1)+'\u4e07':v.toLocaleString(); } },
+      splitLine: { lineStyle:{color:'rgba(80,140,220,0.1)',type:'dashed'} }
+    },
+    series: [{
+      type: 'line', data: data, smooth: true, symbol: 'none',
+      lineStyle: { color:'#7eb8f7', width:2.5 },
+      areaStyle: { color:{ type:'linear',x:0,y:0,x2:0,y2:1,
+        colorStops:[{offset:0,color:'rgba(126,184,247,0.32)'},{offset:1,color:'rgba(126,184,247,0.02)'}] } },
+      markPoint: { data:mps, symbol:'pin', symbolSize:32 }
+    }]
+  }, true);
+}
+
+// ── INIT ─────────────────────────────────────────────────────
+updateBC();
+loadNation();
+</script>
+</body>
+</html>
