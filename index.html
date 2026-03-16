@@ -347,8 +347,8 @@ function hideLoad() { document.getElementById('loading').style.display = 'none';
 function loadGeo(adcode) {
   if (geoCache[adcode]) return Promise.resolve(geoCache[adcode]);
   var urls = [
-    'https://geo.datav.aliyun.com/areas_v3/bound/' + adcode + '_full.json',
-    'https://geo.datav.aliyun.com/areas_v2/bound/' + adcode + '_full.json'
+    'geo/' + adcode + '.json',
+    'https://geo.datav.aliyun.com/areas_v3/bound/' + adcode + '_full.json'
   ];
   function tryNext(i) {
     if (i >= urls.length) return Promise.reject(new Error('地图数据加载失败，请刷新重试'));
