@@ -346,9 +346,17 @@ function hideLoad() { document.getElementById('loading').style.display = 'none';
 // ── GEO ──────────────────────────────────────────────────────
 function loadGeo(adcode) {
   if (geoCache[adcode]) return Promise.resolve(geoCache[adcode]);
-  return fetch('https://geo.datav.aliyun.com/areas_v3/bound/' + adcode + '_full.json')
-    .then(function(r) { if (!r.ok) throw new Error('GeoJSON load failed: ' + adcode); return r.json(); })
-    .then(function(d) { geoCache[adcode] = d; return d; });
+  var urls = [
+    'https://geo.datav.aliyun.com/areas_v3/bound/' + adcode + '_full.json',
+    'https://geo.datav.aliyun.com/areas_v2/bound/' + adcode + '_full.json'
+  ];
+  function tryNext(i) {
+    if (i >= urls.length) return Promise.reject(new Error('地图数据加载失败，请刷新重试'));
+    return fetch(urls[i])
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function() { return tryNext(i + 1); });
+  }
+  return tryNext(0).then(function(d) { geoCache[adcode] = d; return d; });
 }
 
 // ── MAP CLICK ────────────────────────────────────────────────
@@ -370,7 +378,14 @@ function loadNation() {
     renderNation();
     sbNation();
     startSim();
-  }).catch(function(e) { document.getElementById('load-txt').textContent = '\u52a0\u8f7d\u5931\u8d25: ' + e.message; });
+  }).catch(function(e) {
+    document.getElementById('loading').innerHTML =
+      '<div style="text-align:center">' +
+      '<div style="color:#ef5350;font-size:15px;margin-bottom:10px">&#9888; ' + e.message + '</div>' +
+      '<div style="color:#4a6080;font-size:12px;margin-bottom:16px">地图数据接口暂时不可用，请稍后重试</div>' +
+      '<button onclick="loadNation()" style="padding:8px 22px;background:rgba(80,140,220,0.2);border:1px solid rgba(80,140,220,0.5);color:#7eb8f7;border-radius:4px;cursor:pointer;font-size:13px">&#8635; 点击重试</button>' +
+      '</div>';
+  });
 }
 function renderNation() {
   if (!mapChart) {
@@ -420,7 +435,14 @@ function loadProvince(name) {
     echarts.registerMap(name, geo);
     renderProvince(name, geo);
     sbProvince(name, geo);
-  }).catch(function(e) { document.getElementById('load-txt').textContent = '\u52a0\u8f7d\u5931\u8d25: ' + e.message; });
+  }).catch(function(e) {
+    document.getElementById('loading').innerHTML =
+      '<div style="text-align:center">' +
+      '<div style="color:#ef5350;font-size:15px;margin-bottom:10px">&#9888; ' + e.message + '</div>' +
+      '<div style="color:#4a6080;font-size:12px;margin-bottom:16px">请稍后重试</div>' +
+      '<button onclick="goBack()" style="padding:8px 22px;background:rgba(80,140,220,0.2);border:1px solid rgba(80,140,220,0.5);color:#7eb8f7;border-radius:4px;cursor:pointer;font-size:13px">&#8592; 返回</button>' +
+      '</div>';
+  });
 }
 function renderProvince(name, geo) {
   if (!mapChart) {
